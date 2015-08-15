@@ -1,0 +1,8 @@
+snaptap_db.sqlite3
+.idea/
+*.pyc
+.DS_Store
+logs/
+images/
+flickr/
+*.bin
