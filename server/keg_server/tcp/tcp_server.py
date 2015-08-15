@@ -61,12 +61,15 @@ class TCPProtocol(protocol.Protocol):
                 self.current_beer = models.Beer(pour_number=number, keg=self.current_keg)
                 self.current_beer.save()
                 self.writefile = open("images/%s.jpg" % self.current_beer, "wb")
+                self.transport.write('ACK')
             elif 'SNDDATA' in data:
                 print "Starting RX Data mode"
                 self.mode = Modes.RXDATA
+                self.transport.write('ACK')
             elif 'DURATION' in data:
                 duration = int(data.split(':')[1])
                 self.current_beer.pour_duration = duration
+                self.transport.write('ACK')
             elif 'GETCOUNT' in data:
                 now = datetime.datetime.now(tz)
                 if 'DAY' in data:
@@ -108,6 +111,7 @@ class TCPProtocol(protocol.Protocol):
                 self.writefile = ''
                 self.flickr.upload(filename="images/%s.jpg" % self.current_beer, public=1, title=self.current_beer)
                 self.mode = Modes.WAIT
+                self.transport.write('ACK')
             elif self.writefile:
                 print "Writing data"
                 self.writefile.write(data)

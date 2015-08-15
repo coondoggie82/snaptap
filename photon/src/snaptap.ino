@@ -14,13 +14,17 @@ char server[] = "192.168.168.165";
 int PORT = 443;
 int connectToServer();
 int readIntFromTCP(TCPClient);
+void waitForACK();
 
 /* Keg */
 int statusPin = D7;
 enum Modes{WAIT, TAKEPIC, GETDATA};
 int mode = WAIT;
 int dayCount = 0;
+int weekCount = 0;
+int monthCount = 0;
 int kegCount = 0;
+void getCounts();
 
 
 void isr_tapChanged();
@@ -35,27 +39,9 @@ void setup() {
     pinMode(statusPin, OUTPUT);
     digitalWrite(D2, HIGH);
     if(client.connected()){
-        client.write("GETCOUNTKEG");
-        delay(50);
-        while(client.available()<=0){
-            delay(10);
-        }
-        kegCount = readIntFromTCP();
-
-        Serial.print("New keg count: ");
-        Serial.println(kegCount);
-        client.write("GETCOUNTDAY");
-        delay(50);
-        while(client.available()<=0){
-            delay(10);
-        }
-        dayCount = readIntFromTCP();
-
-        Serial.print("New day count: ");
-        Serial.println(dayCount);
-
+      getCounts();
     }else{
-        digitalWrite(statusPin, HIGH);
+      digitalWrite(statusPin, HIGH);
     }
     attachInterrupt(D2, isr_tapChanged, FALLING);
     changeSize(2);
@@ -81,6 +67,7 @@ void loop() {
             //Take picture
             sendTakePhotoCmd();
             client.write("NEWBEER");
+            waitForACK();
             delay(100);
             while(Serial1.available()>0)
             {
@@ -99,6 +86,7 @@ void loop() {
             a=0x0000;
             bool endFlag = false;
             client.write("SNDDATA");
+            waitForACK();
             delay(100);
             while(!endFlag){
                 digitalWrite(statusPin, !digitalRead(statusPin));
@@ -130,8 +118,13 @@ void loop() {
                 delay(5);
                 client.write(byteArr, count);
             }
+            digitalWrite(statusPin, HIGH);
+            delay(500);
             client.write("ENDDATA");
+            waitForACK();
             client.write("DURATION:5");
+            waitForACK();
+            getCounts();
             delay(3000);
             stopTakePhotoCmd();
             attachInterrupt(D2, isr_tapChanged, FALLING);
@@ -160,10 +153,37 @@ int connectToServer() {
   }
 }
 
+void getCounts(){
+  client.write("GETCOUNTKEG");
+  while(client.available()<=0){
+      delay(10);
+  }
+  kegCount = readIntFromTCP();
+  client.write("GETCOUNTDAY");
+  while(client.available()<=0){
+      delay(10);
+  }
+  dayCount = readIntFromTCP();
+  Serial.print("New day count: ");
+  Serial.println(dayCount);
+  client.write("GETCOUNTWEEK");
+  while(client.available()<=0){
+      delay(10);
+  }
+  weekCount = readIntFromTCP();
+  client.write("GETCOUNTMONTH");
+  while(client.available()<=0){
+      delay(10);
+  }
+  monthCount = readIntFromTCP();
+  Serial.print("New month count: ");
+  Serial.println(monthCount);
+}
+
 int readIntFromTCP(){
-    char newChar = 0;
-    char buf[10];
-    int i = 0;
+  char newChar = 0;
+  char buf[10];
+  int i = 0;
 	while(client.available()>0){
 	    newChar = client.read();
 	    buf[i]  = newChar;
@@ -172,6 +192,16 @@ int readIntFromTCP(){
 	int temp = atoi(buf);
 	return temp;
 }
+
+void waitForACK(){
+  while(client.available()<=0){
+    delay(10);
+  }
+  while(client.available()>0){
+    client.read();
+  }
+}
+
 
 void isr_tapChanged(){
     //Set display to "bEEr"
