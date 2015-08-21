@@ -10,7 +10,7 @@ int chunkIncr = 0x400;
 
 /* TCP */
 TCPClient client;
-char server[] = "192.168.168.165";
+char server[] = "192.168.168.144";
 int PORT = 443;
 int connectToServer();
 int readIntFromTCP(TCPClient);
@@ -26,6 +26,15 @@ int monthCount = 0;
 int kegCount = 0;
 void getCounts();
 
+/*Display*/
+enum displayModes{KEG, DAY, WEEK, MONTH};
+int displayMode = KEG;
+int ssPin = A2; //slave select pin
+void clearDisplay();
+void sendDisplayString();
+void setDecimals(byte);
+void updateDisplay();
+
 
 void isr_tapChanged();
 void blinkPin(int,int);
@@ -34,16 +43,30 @@ void blinkPin(int,int);
 void setup() {
     Serial1.begin(38400);
     Serial.begin(115200);
+    //Setup Display
+    pinMode(ssPin, OUTPUT);
+    SPI.begin();
+    SPI.setBitOrder(MSBFIRST);
+    SPI.setDataMode(SPI_MODE0);
+    SPI.setClockDivider(SPI_CLOCK_DIV256);
+    clearDisplay();
+
+    //Setup TCP comms
     connectToServer();
     pinMode(D2, INPUT);
     pinMode(statusPin, OUTPUT);
     digitalWrite(D2, HIGH);
     if(client.connected()){
       getCounts();
+      updateDisplay();
     }else{
       digitalWrite(statusPin, HIGH);
     }
+
+    //Setup tap switch
     attachInterrupt(D2, isr_tapChanged, FALLING);
+
+    //Setup Camera
     changeSize(2);
     delay(100);
     sendResetCmd();
@@ -65,6 +88,7 @@ void loop() {
         case TAKEPIC:
         {
             //Take picture
+            sendDisplayString("bEEr");
             sendTakePhotoCmd();
             client.write("NEWBEER");
             waitForACK();
@@ -125,6 +149,7 @@ void loop() {
             client.write("DURATION:5");
             waitForACK();
             getCounts();
+            updateDisplay();
             delay(3000);
             stopTakePhotoCmd();
             attachInterrupt(D2, isr_tapChanged, FALLING);
@@ -144,6 +169,7 @@ void loop() {
 //connect to tcp server
 int connectToServer() {
   digitalWrite(statusPin, HIGH);
+  delay(1000);
   if (client.connect(server, PORT)) {
       digitalWrite(statusPin, LOW);
       return 1; // successfully connected
@@ -331,4 +357,55 @@ void changeBaudRate(unsigned long baudRate){
     delay(2);
     Serial1.end();
     Serial1.begin(baudRate);
+}
+
+// Send the clear display command (0x76)
+//  This will clear the display and reset the cursor
+void clearDisplay()
+{
+  digitalWrite(ssPin, LOW);
+  SPI.transfer(0x76);  // Clear display command
+  digitalWrite(ssPin, HIGH);
+}
+// Turn on any, none, or all of the decimals.
+//  The six lowest bits in the decimals parameter sets a decimal
+//  (or colon, or apostrophe) on or off. A 1 indicates on, 0 off.
+//  [MSB] (X)(X)(Apos)(Colon)(Digit 4)(Digit 3)(Digit2)(Digit1)
+void setDecimals(byte decimals)
+{
+  digitalWrite(ssPin, LOW);
+  SPI.transfer(0x77);
+  SPI.transfer(decimals);
+  digitalWrite(ssPin, HIGH);
+}
+
+void sendDisplayString(char* toSend)
+{
+  digitalWrite(ssPin, LOW);
+  for (int i=0; i<4; i++)
+  {
+    SPI.transfer(toSend[i]);
+  }
+  digitalWrite(ssPin, HIGH);
+}
+
+void updateDisplay(){
+  int count = 0;
+  switch(displayMode){
+    case KEG:
+      count = kegCount;
+      break;
+    case DAY:
+      count = dayCount;
+      break;
+    case WEEK:
+      count = weekCount;
+      break;
+    case MONTH:
+      count = monthCount;
+      break;
+  }
+  char temp[10];
+  sprintf(temp, "%04d", count);
+  sendDisplayString(temp);
 }
