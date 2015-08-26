@@ -58,7 +58,9 @@ class TCPProtocol(protocol.Protocol):
                 print "Received New Beer"
                 self.current_keg = models.Kegerator.objects.get(name__contains="The Studio").current_keg
                 number = self.current_keg.beer_set.count()+1
-                self.current_beer = models.Beer(pour_number=number, keg=self.current_keg)
+                self.current_beer = models.Beer(pour_number=number,
+                                                keg=self.current_keg,
+                                                pour_date=datetime.datetime.now(tz))
                 self.current_beer.save()
                 self.writefile = open("images/%s.jpg" % self.current_beer, "wb")
                 self.transport.write('ACK')
@@ -67,8 +69,10 @@ class TCPProtocol(protocol.Protocol):
                 self.mode = Modes.RXDATA
                 self.transport.write('ACK')
             elif 'DURATION' in data:
+                print "Duration: %s" % data
                 duration = int(data.split(':')[1])
                 self.current_beer.pour_duration = duration
+                self.current_beer.save()
                 self.transport.write('ACK')
             elif 'GETCOUNT' in data:
                 now = datetime.datetime.now(tz)

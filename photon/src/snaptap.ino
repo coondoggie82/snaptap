@@ -18,22 +18,27 @@ void waitForACK();
 
 /* Keg */
 int statusPin = D7;
-enum Modes{WAIT, TAKEPIC, GETDATA};
+enum Modes{WAIT, TAKEPIC, GETDATA, POURING};
 int mode = WAIT;
 int dayCount = 0;
 int weekCount = 0;
 int monthCount = 0;
 int kegCount = 0;
+volatile long startPour = 0;
+volatile long endPour = -1;
 void getCounts();
 
 /*Display*/
 enum displayModes{KEG, DAY, WEEK, MONTH};
 int displayMode = KEG;
 int ssPin = A2; //slave select pin
+int displaySettingPin = A0;
 void clearDisplay();
 void sendDisplayString();
 void setDecimals(byte);
 void updateDisplay();
+void setBrightness();
+void checkDisplaySetting();
 
 
 void isr_tapChanged();
@@ -45,11 +50,13 @@ void setup() {
     Serial.begin(115200);
     //Setup Display
     pinMode(ssPin, OUTPUT);
+    pinMode(displaySettingPin, INPUT);
     SPI.begin();
     SPI.setBitOrder(MSBFIRST);
     SPI.setDataMode(SPI_MODE0);
     SPI.setClockDivider(SPI_CLOCK_DIV256);
     clearDisplay();
+    setBrightness(25);
 
     //Setup TCP comms
     connectToServer();
@@ -58,13 +65,19 @@ void setup() {
     digitalWrite(D2, HIGH);
     if(client.connected()){
       getCounts();
+      checkDisplaySetting();
       updateDisplay();
     }else{
       digitalWrite(statusPin, HIGH);
+      sendDisplayString("noco");
+      //No communications -- wait for reset
+      while(true){
+        delay(100);
+      }
     }
 
     //Setup tap switch
-    attachInterrupt(D2, isr_tapChanged, FALLING);
+    attachInterrupt(D2, isr_tapChanged, CHANGE);
 
     //Setup Camera
     changeSize(2);
@@ -81,7 +94,7 @@ void loop() {
     {
         case WAIT:
         {
-            //do nothing
+            checkDisplaySetting();
             delay(10);
             break;
         }
@@ -102,6 +115,7 @@ void loop() {
         }
         case GETDATA:
         {
+            //attachInterrupt(D2, isr_tapChanged, FALLING);
             byte byteArr[chunkSize];
             byte incomingByte;
             int j;
@@ -146,16 +160,38 @@ void loop() {
             delay(500);
             client.write("ENDDATA");
             waitForACK();
-            client.write("DURATION:5");
-            waitForACK();
-            getCounts();
-            updateDisplay();
+            if(endPour > startPour){
+              char temp[10];
+              sprintf(temp, "DURATION:%d", (int)((endPour-startPour)/1000.0));
+              client.write(temp);
+              waitForACK();
+              //attachInterrupt(D2, isr_tapChanged, FALLING);
+              getCounts();
+              updateDisplay();
+              mode = WAIT;
+            }else{
+              mode = POURING;
+            }
             delay(3000);
             stopTakePhotoCmd();
-            attachInterrupt(D2, isr_tapChanged, FALLING);
             digitalWrite(statusPin, LOW);
-            mode = WAIT;
             break;
+        }
+        case POURING:
+        {
+          if(endPour > startPour){
+            char temp[10];
+            sprintf(temp, "-DURATION:%d", (int)((endPour-startPour)/1000.0));
+            client.write(temp);
+            waitForACK();
+            //delay(50); //just to make sure bounce doesn't trigger another
+            //attachInterrupt(D2, isr_tapChanged, FALLING);
+            getCounts();
+            updateDisplay();
+            mode = WAIT;
+          }else{
+            delay(10);
+          }
         }
         default:
         {
@@ -230,15 +266,17 @@ void waitForACK(){
 
 
 void isr_tapChanged(){
-    //Set display to "bEEr"
-    //Start timer
     if(mode == WAIT){
-        mode = TAKEPIC;
-        detachInterrupt(D2);
+      //detachInterrupt(D2);
+      mode = TAKEPIC;
+      startPour = millis();
     }else if(mode == TAKEPIC){
-        //do nothing
-    }else if(mode == GETDATA){
-        //do nothing
+      //shouldn't happen
+    }else if(mode == GETDATA || mode == POURING){
+      if(endPour<startPour){
+        //detachInterrupt(D2);
+        endPour = millis();
+      }
     }
 }
 
@@ -367,6 +405,7 @@ void clearDisplay()
   SPI.transfer(0x76);  // Clear display command
   digitalWrite(ssPin, HIGH);
 }
+
 // Turn on any, none, or all of the decimals.
 //  The six lowest bits in the decimals parameter sets a decimal
 //  (or colon, or apostrophe) on or off. A 1 indicates on, 0 off.
@@ -376,6 +415,18 @@ void setDecimals(byte decimals)
   digitalWrite(ssPin, LOW);
   SPI.transfer(0x77);
   SPI.transfer(decimals);
+  digitalWrite(ssPin, HIGH);
+}
+
+// Set the displays brightness. Should receive byte with the value
+//  to set the brightness to
+//  dimmest------------->brightest
+//     0--------127--------255
+void setBrightness(byte value)
+{
+  digitalWrite(ssPin, LOW);
+  SPI.transfer(0x7A);  // Set brightness command byte
+  SPI.transfer(value);  // brightness data byte
   digitalWrite(ssPin, HIGH);
 }
 
@@ -408,4 +459,26 @@ void updateDisplay(){
   char temp[10];
   sprintf(temp, "%04d", count);
   sendDisplayString(temp);
+}
+
+void checkDisplaySetting(){
+    double threshLow = 0.25;
+    double threshMid = 0.50;
+    double threshHigh = 0.75;
+    int mode;
+    int val = analogRead(displaySettingPin);
+    double valPercent = val/(double)4095;
+    if(valPercent<threshLow){
+      mode = DAY;
+    }else if(valPercent>=threshLow && valPercent<threshMid){
+      mode = WEEK;
+    }else if(valPercent>=threshMid && valPercent<threshHigh){
+      mode = MONTH;
+    }else{
+      mode = KEG;
+    }
+    if(mode!=displayMode){
+      displayMode = mode;
+      updateDisplay();
+    }
 }
