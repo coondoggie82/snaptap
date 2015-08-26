@@ -18,8 +18,8 @@ void waitForACK();
 
 /* Keg */
 int statusPin = D7;
-enum Modes{WAIT, TAKEPIC, GETDATA, POURING};
-int mode = WAIT;
+enum Modes{WAIT, COUNTDOWN, TAKEPIC, GETDATA, POURING};
+volatile int mode = WAIT;
 int dayCount = 0;
 int weekCount = 0;
 int monthCount = 0;
@@ -34,8 +34,9 @@ int displayMode = KEG;
 int ssPin = A2; //slave select pin
 int displaySettingPin = A0;
 void clearDisplay();
-void sendDisplayString();
+void sendDisplayString(char*,int size=4);
 void setDecimals(byte);
+void setCursor(byte);
 void updateDisplay();
 void setBrightness();
 void checkDisplaySetting();
@@ -86,6 +87,7 @@ void setup() {
     delay(4000);
     changeBaudRate(115200);
     blinkPin(statusPin, 3);
+    setDecimals(0b00001000);
 }
 
 void loop() {
@@ -98,9 +100,44 @@ void loop() {
             delay(10);
             break;
         }
+        case COUNTDOWN:
+        {
+          clearDisplay();
+          sendDisplayString("4", 1);
+          delay(500);
+          clearDisplay();
+          setCursor(0x01);
+          sendDisplayString("3", 1);
+          delay(500);
+          clearDisplay();
+          setCursor(0x02);
+          sendDisplayString("2", 1);
+          delay(500);
+          clearDisplay();
+          setCursor(0x03);
+          sendDisplayString("1", 1);
+          delay(500);
+          clearDisplay();
+          if(mode == COUNTDOWN){
+            mode=TAKEPIC;
+          }else{
+            //Don't take a picture if they already put the tap back
+            if(millis()%2 == 0){
+              sendDisplayString("nOpE");
+            }else{
+              sendDisplayString("booo");
+            }
+            delay(2000);
+            clearDisplay();
+            setDecimals(0b00001000);
+            updateDisplay();
+          }
+          break;
+        }
         case TAKEPIC:
         {
             //Take picture
+            setDecimals(0b00000000);
             sendDisplayString("bEEr");
             sendTakePhotoCmd();
             client.write("NEWBEER");
@@ -175,6 +212,7 @@ void loop() {
             delay(3000);
             stopTakePhotoCmd();
             digitalWrite(statusPin, LOW);
+            setDecimals(0b00001000);
             break;
         }
         case POURING:
@@ -268,11 +306,12 @@ void waitForACK(){
 void isr_tapChanged(){
     if(mode == WAIT){
       //detachInterrupt(D2);
-      mode = TAKEPIC;
+      mode = COUNTDOWN;
       startPour = millis();
-    }else if(mode == TAKEPIC){
-      //shouldn't happen
-    }else if(mode == GETDATA || mode == POURING){
+    }else if (mode == COUNTDOWN){
+      mode = WAIT;
+    }
+    else if(mode == GETDATA || mode == POURING){
       if(endPour<startPour){
         //detachInterrupt(D2);
         endPour = millis();
@@ -418,6 +457,14 @@ void setDecimals(byte decimals)
   digitalWrite(ssPin, HIGH);
 }
 
+void setCursor(byte cursorPos)
+{
+  digitalWrite(ssPin, LOW);
+  SPI.transfer(0x79);
+  SPI.transfer(cursorPos);
+  digitalWrite(ssPin, HIGH);
+}
+
 // Set the displays brightness. Should receive byte with the value
 //  to set the brightness to
 //  dimmest------------->brightest
@@ -430,10 +477,10 @@ void setBrightness(byte value)
   digitalWrite(ssPin, HIGH);
 }
 
-void sendDisplayString(char* toSend)
+void sendDisplayString(char* toSend, int size)
 {
   digitalWrite(ssPin, LOW);
-  for (int i=0; i<4; i++)
+  for (int i=0; i<size; i++)
   {
     SPI.transfer(toSend[i]);
   }

@@ -52,6 +52,7 @@ class TCPProtocol(protocol.Protocol):
             if 'ECHO:' in data:
                 msg = data.split(':')[1]
                 print 'Received ECHO: %s' % msg
+                print 'Time: %s' % datetime.datetime.now(tz)
                 self.transport.write(msg)
                 return
             elif 'NEWBEER' in data:
