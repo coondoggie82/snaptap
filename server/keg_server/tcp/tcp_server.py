@@ -30,7 +30,7 @@ class TCPProtocol(protocol.Protocol):
     # def __init__(self):
     #     self.factory = factory
     mode = Modes.WAIT
-
+    unsent_pics = []
     flickr = flickrapi.FlickrAPI(api_key=key, secret=secret)
 
     def connectionMade(self):
@@ -108,15 +108,23 @@ class TCPProtocol(protocol.Protocol):
                     keg_count = self.current_keg.beer_set.count()
                     print "Sending Keg Count %d" % keg_count
                     self.transport.write("%d" % keg_count)
+            else:
+                print "Unknown message: %s" % data
+
+
 
         elif self.mode == Modes.RXDATA:
             if 'ENDDATA' in data:
                 print "End of data, closing file"
                 self.writefile.close()
                 self.writefile = ''
-                self.flickr.upload(filename="images/%s.jpg" % self.current_beer, public=1, title=self.current_beer)
-                self.mode = Modes.WAIT
+                print "File closed, sending ACK"
                 self.transport.write('ACK')
+                print "Uploading photo"
+                self.flickr.upload(filename="images/%s.jpg" % self.current_beer, public=1, title=self.current_beer)
+                print "photo uploaded"
+                self.mode = Modes.WAIT
+
             elif self.writefile:
                 print "Writing data"
                 self.writefile.write(data)

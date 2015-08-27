@@ -12,12 +12,13 @@ int chunkIncr = 0x400;
 TCPClient client;
 char server[] = "192.168.168.144";
 int PORT = 443;
-int connectToServer();
+void connectToServer();
 int readIntFromTCP(TCPClient);
-void waitForACK();
+int waitForACK();
 
 /* Keg */
 int statusPin = D7;
+int reedSwitchPin = D2;
 enum Modes{WAIT, COUNTDOWN, TAKEPIC, GETDATA, POURING};
 volatile int mode = WAIT;
 int dayCount = 0;
@@ -26,6 +27,7 @@ int monthCount = 0;
 int kegCount = 0;
 volatile long startPour = 0;
 volatile long endPour = -1;
+volatile long lastInterruptTime = 0;
 void getCounts();
 
 /*Display*/
@@ -61,24 +63,17 @@ void setup() {
 
     //Setup TCP comms
     connectToServer();
-    pinMode(D2, INPUT);
+    pinMode(reedSwitchPin, INPUT_PULLUP);
     pinMode(statusPin, OUTPUT);
-    digitalWrite(D2, HIGH);
     if(client.connected()){
       getCounts();
       checkDisplaySetting();
       updateDisplay();
     }else{
-      digitalWrite(statusPin, HIGH);
-      sendDisplayString("noco");
-      //No communications -- wait for reset
-      while(true){
-        delay(100);
-      }
+      connectToServer();
     }
-
     //Setup tap switch
-    attachInterrupt(D2, isr_tapChanged, CHANGE);
+    attachInterrupt(reedSwitchPin, isr_tapChanged, CHANGE);
 
     //Setup Camera
     changeSize(2);
@@ -202,14 +197,13 @@ void loop() {
               sprintf(temp, "DURATION:%d", (int)((endPour-startPour)/1000.0));
               client.write(temp);
               waitForACK();
-              //attachInterrupt(D2, isr_tapChanged, FALLING);
               getCounts();
               updateDisplay();
               mode = WAIT;
             }else{
               mode = POURING;
             }
-            delay(3000);
+            delay(1000);
             stopTakePhotoCmd();
             digitalWrite(statusPin, LOW);
             setDecimals(0b00001000);
@@ -222,8 +216,6 @@ void loop() {
             sprintf(temp, "-DURATION:%d", (int)((endPour-startPour)/1000.0));
             client.write(temp);
             waitForACK();
-            //delay(50); //just to make sure bounce doesn't trigger another
-            //attachInterrupt(D2, isr_tapChanged, FALLING);
             getCounts();
             updateDisplay();
             mode = WAIT;
@@ -241,15 +233,14 @@ void loop() {
 }
 
 //connect to tcp server
-int connectToServer() {
-  digitalWrite(statusPin, HIGH);
-  delay(1000);
+void connectToServer() {
   if (client.connect(server, PORT)) {
-      digitalWrite(statusPin, LOW);
-      return 1; // successfully connected
-  } else {
-     digitalWrite(statusPin, LOW);
-     return -1; // failed to connect
+    sendDisplayString("conn");
+    delay(500);
+  }else{
+    sendDisplayString("noco"); //display "no connection" try again in 2 seconds
+    delay(2000);
+    connectToServer();
   }
 }
 
@@ -293,28 +284,44 @@ int readIntFromTCP(){
 	return temp;
 }
 
-void waitForACK(){
+int waitForACK(){
+  long ackTimeout = 10000;
+  long start = millis();
   while(client.available()<=0){
+    if((millis()-start)>ackTimeout){
+      /*connectToServer();
+      getCounts();
+      updateDisplay();
+      mode = WAIT;*/
+      sendDisplayString("noco");
+      while(1){
+        delay(100); //wait for reset
+      }
+      return -1;
+    }
     delay(10);
   }
   while(client.available()>0){
     client.read();
   }
+  return 1;
 }
 
 
 void isr_tapChanged(){
-    if(mode == WAIT){
-      //detachInterrupt(D2);
-      mode = COUNTDOWN;
-      startPour = millis();
-    }else if (mode == COUNTDOWN){
-      mode = WAIT;
-    }
-    else if(mode == GETDATA || mode == POURING){
-      if(endPour<startPour){
-        //detachInterrupt(D2);
-        endPour = millis();
+    long curr = millis();
+    if((curr-lastInterruptTime)>50){ //ignore bouncing signal
+      lastInterruptTime = curr;
+      if(mode == WAIT){
+        mode = COUNTDOWN;
+        startPour = millis();
+      }else if (mode == COUNTDOWN){
+        mode = WAIT;
+      }
+      else if(mode == GETDATA || mode == POURING){
+        if(endPour<startPour){
+          endPour = millis();
+        }
       }
     }
 }
