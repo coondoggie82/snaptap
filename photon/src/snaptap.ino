@@ -10,7 +10,7 @@ int chunkIncr = 0x400;
 
 /* TCP */
 TCPClient client;
-char server[] = "192.168.168.144";
+char server[] = "192.168.168.96";
 int PORT = 443;
 void connectToServer();
 int readIntFromTCP(TCPClient);
@@ -193,8 +193,8 @@ void loop() {
             client.write("ENDDATA");
             waitForACK();
             if(endPour > startPour){
-              char temp[10];
-              sprintf(temp, "DURATION:%d", (int)((endPour-startPour)/1000.0));
+              char temp[20];
+              sprintf(temp, "DURATION:%d", endPour-startPour);
               client.write(temp);
               waitForACK();
               getCounts();
@@ -212,8 +212,8 @@ void loop() {
         case POURING:
         {
           if(endPour > startPour){
-            char temp[10];
-            sprintf(temp, "-DURATION:%d", (int)((endPour-startPour)/1000.0));
+            char temp[20];
+            sprintf(temp, "-DURATION:%d", endPour-startPour);
             client.write(temp);
             waitForACK();
             getCounts();

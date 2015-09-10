@@ -29,5 +29,5 @@ class Beer(models.Model):
 
     pour_number = models.IntegerField(default=0)
     pour_date = models.DateTimeField(default=datetime.datetime.now(tz))
-    pour_duration = models.IntegerField('Pour Duration (seconds)', default=0)
+    pour_duration = models.IntegerField('Pour Duration (ms)', default=0)
     keg = models.ForeignKey(Keg)
