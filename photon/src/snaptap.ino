@@ -10,7 +10,7 @@ int chunkIncr = 0x400;
 
 /* TCP */
 TCPClient client;
-char server[] = "192.168.168.96";
+char server[] = "10.154.0.35";
 int PORT = 443;
 void connectToServer();
 int readIntFromTCP(TCPClient);
@@ -59,7 +59,7 @@ void setup() {
     SPI.setDataMode(SPI_MODE0);
     SPI.setClockDivider(SPI_CLOCK_DIV256);
     clearDisplay();
-    setBrightness(25);
+    setBrightness(10);
 
     //Setup TCP comms
     connectToServer();
@@ -133,11 +133,13 @@ void loop() {
         {
             //Take picture
             setDecimals(0b00000000);
-            sendDisplayString("bEEr");
+            sendDisplayString("SnAp");
+            delay(500);
             sendTakePhotoCmd();
             client.write("NEWBEER");
             waitForACK();
-            delay(100);
+            delay(500);
+            sendDisplayString("bEEr");
             while(Serial1.available()>0)
             {
                 char newChar = Serial1.read();
@@ -293,7 +295,7 @@ int waitForACK(){
       getCounts();
       updateDisplay();
       mode = WAIT;*/
-      sendDisplayString("noco");
+      sendDisplayString("noAc");
       while(1){
         delay(100); //wait for reset
       }
@@ -321,6 +323,7 @@ void isr_tapChanged(){
       else if(mode == GETDATA || mode == POURING){
         if(endPour<startPour){
           endPour = millis();
+          sendDisplayString("    ");
         }
       }
     }
@@ -523,13 +526,13 @@ void checkDisplaySetting(){
     int val = analogRead(displaySettingPin);
     double valPercent = val/(double)4095;
     if(valPercent<threshLow){
-      mode = DAY;
-    }else if(valPercent>=threshLow && valPercent<threshMid){
-      mode = WEEK;
-    }else if(valPercent>=threshMid && valPercent<threshHigh){
-      mode = MONTH;
-    }else{
       mode = KEG;
+    }else if(valPercent>=threshLow && valPercent<threshMid){
+      mode = MONTH;
+    }else if(valPercent>=threshMid && valPercent<threshHigh){
+      mode = WEEK;
+    }else{
+      mode = DAY;
     }
     if(mode!=displayMode){
       displayMode = mode;
